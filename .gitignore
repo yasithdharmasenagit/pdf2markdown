@@ -4,3 +4,6 @@ __pycache__/
 .env
 config.yaml
 utils/output/
+# Local test files
+*.pdf
+output_raw_text.txt
