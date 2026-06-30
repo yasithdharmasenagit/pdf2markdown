@@ -6,4 +6,4 @@ config.yaml
 utils/output/
 # Local test files
 *.pdf
-output_raw_text.txt
+output_structured.md
