@@ -1,46 +1,49 @@
 # providers/gemini.py
 import time
 import google.generativeai as genai
-from . import BaseLLMProvider
 
-class GeminiProvider(BaseLLMProvider):
-    """Integrates Google's Gemini models with built-in retry resilience."""
+class GeminiProvider:
     def __init__(self, api_key: str):
-        super().__init__(api_key=api_key)
-        genai.configure(api_key=self.api_key)
-        self.model_name = "gemini-2.5-flash"
+        if not api_key:
+            raise ValueError("API Key missing.")
+        genai.configure(api_key=api_key)
+        # Using 2.5-flash as it has a massive context window and rapid processing speeds
+        self.model = genai.GenerativeModel('gemini-2.5-flash')
 
-    def transform_text(self, raw_text: str) -> str:
-        """Sends raw text to Gemini to turn it into structured Markdown."""
-        system_instruction = (
-            "You are an expert document translation engine. Your sole task is to take messy, raw text "
-            "extracted from a PDF and restructure it into flawless, clean, and highly professional Markdown (.md).\n\n"
-            "Rules:\n"
-            "1. Preserve ALL original information, details, and text content accurately.\n"
-            "2. Identify natural titles, sections, and lists and apply correct Markdown tags (#, ##, -, *, etc.).\n"
-            "3. Reconstruct tables and tabular data into clean Markdown tables.\n"
-            "4. Eliminate layout artifacts such as page numbers, repeating running headers, and running footers."
+    def transform_text(self, raw_text: str, chunk_index: int = None) -> str:
+        """Sends a specific text block to Gemini with robust error handling and retries."""
+        if not raw_text.strip():
+            return ""
+
+        # System instructions engineered specifically to keep markdown clean across stitched chunks
+        prompt = (
+            "You are an expert document structural layout engineer.\n"
+            "Your task is to convert the following raw PDF extracted text into clean, professional Markdown.\n"
+            "Requirements:\n"
+            "1. Maintain all original hierarchy (headers, sub-headers, lists, bullet points).\n"
+            "2. Fix broken words or hyphenations caused by PDF page clipping.\n"
+            "3. Do NOT add any conversational introduction or conclusion text. Output ONLY the raw markdown code.\n"
+            "4. Preserve formatting blocks, code sections, or tables cleanly.\n\n"
+            f"--- RAW TEXT BLOCK ---\n{raw_text}"
         )
 
-        # Exponential backoff parameters: retry up to 5 times
-        # Delays: 1s, 2s, 4s, 8s, 16s
-        backoff_delays = [1, 2, 4, 8, 16]
-        last_error = None
+        max_retries = 5
+        backoff_factor = 2
 
-        for attempt, delay in enumerate(backoff_delays):
+        for attempt in range(max_retries):
             try:
-                model = genai.GenerativeModel(
-                    model_name=self.model_name,
-                    system_instruction=system_instruction
-                )
-                response = model.generate_content(raw_text)
-                return response.text
+                response = self.model.generate_content(prompt)
+                if response.text:
+                    return response.text
+                raise Exception("Empty response received from Gemini infrastructure.")
+            
             except Exception as e:
-                last_error = e
-                # Wait silently before retrying
-                if attempt < len(backoff_delays) - 1:
-                    time.sleep(delay)
-
-        raise RuntimeError(
-            f"Failed to process text using Gemini API after 5 attempts. Last Error: {last_error}"
-        )
+                # If we get rate limited (HTTP 429) due to many pages hitting the API, back off gracefully
+                if "429" in str(e) or "ResourceExhausted" in str(e):
+                    sleep_time = backoff_factor ** attempt
+                    time.sleep(sleep_time)
+                    continue
+                else:
+                    raise e
+                    
+        raise Exception(f"Failed to process chunk {chunk_index} after multiple safe retrying attempts.")
