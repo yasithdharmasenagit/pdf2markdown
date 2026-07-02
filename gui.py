@@ -6,7 +6,7 @@ from tkinter import filedialog
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from core.extractor import PDFExtractor
 from core.formatter import MarkdownFormatter
-from providers import GeminiProvider
+from providers import GeminiProvider, OpenAIProvider, AnthropicProvider
 
 ctk.set_appearance_mode("System")  
 ctk.set_default_color_theme("blue")
@@ -17,7 +17,6 @@ class PDF2MarkdownGUI(ctk.CTk):
 
         self.title("PDF to Markdown AI Converter (Enterprise Large-Scale Edition)")
         
-        # Pull monitor hardware metrics to maximize screen allocation layout safely
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
         self.geometry(f"{screen_width}x{screen_height}+0+0")
@@ -48,7 +47,7 @@ class PDF2MarkdownGUI(ctk.CTk):
         self.provider_label.pack(padx=15, pady=(15, 0), anchor="w")
         
         self.provider_select = ctk.CTkOptionMenu(
-            self.left_panel, values=["Gemini (AI Parallel Chunks Engine)", "Local Rules (Offline Local Fallback)"], width=260
+            self.left_panel, values=["Gemini (AI Parallel Chunks Engine)", "ChatGPT (OpenAI Core)", "Claude (Anthropic Engine)", "Local Rules (Offline Local Fallback)"], width=260
         )
         self.provider_select.pack(padx=15, pady=5)
 
@@ -59,7 +58,7 @@ class PDF2MarkdownGUI(ctk.CTk):
         self.convert_btn.pack(padx=15, pady=20)
 
         self.save_btn = ctk.CTkButton(
-            self.left_panel, text="💾 Save Document As...", command=self.save_file_destination,
+            self.left_panel, text="Save Document As...", command=self.save_file_destination,
             fg_color="#1b6335", hover_color="#16a34a", text_color="white",
             font=ctk.CTkFont(weight="bold"), state="disabled", width=260
         )
@@ -77,7 +76,7 @@ class PDF2MarkdownGUI(ctk.CTk):
         self.right_panel.grid_rowconfigure(1, weight=1)
         self.right_panel.grid_columnconfigure(0, weight=1)
 
-        self.preview_label = ctk.CTkLabel(self.right_panel, text="📄 Live Compiled Markdown Output View", font=ctk.CTkFont(size=14, weight="bold"))
+        self.preview_label = ctk.CTkLabel(self.right_panel, text="Live Compiled Markdown Output View", font=ctk.CTkFont(size=14, weight="bold"))
         self.preview_label.grid(row=0, column=0, padx=15, pady=10, sticky="w")
 
         self.viewer_output = ctk.CTkTextbox(self.right_panel, font=ctk.CTkFont(family="Consolas", size=12))
@@ -112,15 +111,12 @@ class PDF2MarkdownGUI(ctk.CTk):
         try:
             pdf_path = self.selected_pdf_path
             selected_engine = self.provider_select.get()
-            api_key = os.getenv("GEMINI_API_KEY")
 
             self.log_message("\n--- Running Large Document Pipeline ---")
             self.log_message("[*] Analyzing document size and structure context...")
             
-            # 1. Initialize our text layer extractor
             extractor = PDFExtractor(pdf_path)
             
-            # Let's get total page volume using PyMuPDF directly
             import fitz
             doc = fitz.open(pdf_path)
             total_pages = len(doc)
@@ -128,18 +124,15 @@ class PDF2MarkdownGUI(ctk.CTk):
             
             self.log_message(f"Document Target Detected: {total_pages} total pages.")
 
-            # Define operational chunk pacing variables
-            PAGES_PER_CHUNK = 5  # Groups pages into sets of 5 to protect layouts
+            PAGES_PER_CHUNK = 5  
             chunks = []
             
             self.log_message(f"[*] Splitting text canvas into segments ({PAGES_PER_CHUNK} pages per block)...")
             
-            # Harvest text content dynamically by mapped boundaries
             for i in range(0, total_pages, PAGES_PER_CHUNK):
                 start_page = i
                 end_page = min(i + PAGES_PER_CHUNK - 1, total_pages - 1)
                 
-                # Extract text for just this page subset range
                 chunk_text = ""
                 doc_context = fitz.open(pdf_path)
                 for page_num in range(start_page, end_page + 1):
@@ -156,19 +149,35 @@ class PDF2MarkdownGUI(ctk.CTk):
             total_chunks = len(chunks)
             self.log_message(f"Created {total_chunks} independent chunk packets for processing.")
 
-            # Result array placeholder mapping to keep the sequence exact
             compiled_results = [""] * total_chunks
-
-            if "Gemini" in selected_engine and api_key:
-                self.log_message("[*] Initializing Parallel AI Core Thread Pools...")
-                provider = GeminiProvider(api_key=api_key)
+            provider = None
+            
+            if "Gemini" in selected_engine:
+                gemini_key = os.getenv("GEMINI_API_KEY")
+                if not gemini_key:
+                    raise ValueError("Missing GEMINI_API_KEY environment variable!")
+                self.log_message("[*] Initializing Parallel Google Gemini Core...")
+                provider = GeminiProvider(api_key=gemini_key)
                 
-                # Max Workers sets how many parallel connections we establish at once.
-                # 3-4 is optimal to stay within API speed limits without triggering blocks.
+            elif "ChatGPT" in selected_engine:
+                openai_key = os.getenv("OPENAI_API_KEY")
+                if not openai_key:
+                    raise ValueError("Missing OPENAI_API_KEY environment variable!")
+                self.log_message("[*] Initializing Parallel OpenAI ChatGPT Core...")
+                provider = OpenAIProvider(api_key=openai_key)
+                
+            elif "Claude" in selected_engine:
+                anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+                if not anthropic_key:
+                    raise ValueError("Missing ANTHROPIC_API_KEY environment variable!")
+                self.log_message("[*] Initializing Parallel Anthropic Claude Core...")
+                provider = AnthropicProvider(api_key=anthropic_key)
+
+            if provider is not None:
+                self.log_message("[*] Initializing Parallel AI Core Thread Pools...")
                 MAX_THREADS = 3 
                 
                 with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-                    # Submit all chunks to our concurrent tracking pool
                     future_to_chunk = {
                         executor.submit(provider.transform_text, chunk["text"], chunk["index"]): chunk 
                         for chunk in chunks
@@ -188,21 +197,21 @@ class PDF2MarkdownGUI(ctk.CTk):
                                 f"[{percentage}%] | Processed Pages {chunk_meta['start_p']}-{chunk_meta['end_p']}"
                             )
                         except Exception as e:
-                            self.log_message(f"Error compiling packet block index {chunk_meta['index']}: {str(e)}")
+                            self.log_message(f"AI Error on chunk {chunk_meta['index']}: {str(e)}")
+                            self.log_message(f"Running Local Rule Fallback for Pages {chunk_meta['start_p']}-{chunk_meta['end_p']}...")
+                            
+                            formatter = MarkdownFormatter(chunk_meta["text"])
+                            compiled_results[chunk_meta["index"]] = formatter.format_text()
 
                 self.converted_markdown_data = "\n\n".join(compiled_results)
             
             else:
-                # Local Rule Fallback Engine execution path
-                if "Gemini" in selected_engine and not api_key:
-                    self.log_message("Environment Key Missing! Using local offline layout rules...")
-                
                 self.log_message("[*] Executing local unified system parser...")
                 full_raw_text = extractor.extract_text()
                 formatter = MarkdownFormatter(full_raw_text)
                 self.converted_markdown_data = formatter.format_text()
 
-            # Display the compiled results inside the viewer canvas panel
+            self.viewer_output.delete("1.0", "end")
             self.viewer_output.insert("1.0", self.converted_markdown_data)
             self.log_message("\nEnterprise Document Conversion Sequence Successful!")
             self.save_btn.configure(state="normal")

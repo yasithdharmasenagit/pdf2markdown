@@ -1,44 +1,36 @@
 # providers/openai.py
 import time
-from . import BaseLLMProvider
+from openai import OpenAI
 
-class OpenAIProvider(BaseLLMProvider):
-    """Integrates OpenAI GPT models (e.g., gpt-4o, gpt-4o-mini) for layout reconstruction."""
-    def __init__(self, api_key: str, model_name: str = "gpt-4o-mini"):
-        super().__init__(api_key=api_key)
-        self.model_name = model_name
-        # Lazy import of the openai library to prevent errors if not installed
-        try:
-            import openai
-            self.client = openai.OpenAI(api_key=self.api_key)
-        except ImportError:
-            self.client = None
+class OpenAIProvider:
+    def __init__(self, api_key: str):
+        if not api_key:
+            raise ValueError("OpenAI API Key missing.")
+        self.client = OpenAI(api_key=api_key)
+        # Using gpt-4o-mini for incredible speed, low costs, and high structural accuracy
+        self.model = "gpt-4o-mini"
 
-    def transform_text(self, raw_text: str) -> str:
-        if not self.client:
-            raise ImportError("The 'openai' library is not installed. Please run: pip install openai")
+    def transform_text(self, raw_text: str, chunk_index: int = None) -> str:
+        if not raw_text.strip():
+            return ""
 
-        system_instruction = (
-            "You are an expert document translation engine. Convert this raw text extracted from a PDF "
-            "into clean, structural Markdown. Preserve all info, design clean tables, and omit footer/header noise."
-        )
+        max_retries = 5
+        backoff_factor = 2
 
-        backoff_delays = [1, 2, 4, 8, 16]
-        last_error = None
-
-        for attempt, delay in enumerate(backoff_delays):
+        for attempt in range(max_retries):
             try:
                 response = self.client.chat.completions.create(
-                    model=self.model_name,
+                    model=self.model,
+                    temperature=0.1,
                     messages=[
-                        {"role": "system", "content": system_instruction},
+                        {"role": "system", "content": "You are an expert layout engineer. Convert raw text into clean Markdown. Do NOT add preamble. Output ONLY raw markdown."},
                         {"role": "user", "content": raw_text}
                     ]
                 )
                 return response.choices[0].message.content
             except Exception as e:
-                last_error = e
-                if attempt < len(backoff_delays) - 1:
-                    time.sleep(delay)
-
-        raise RuntimeError(f"OpenAI transformation failed after 5 attempts. Last Error: {last_error}")
+                if "429" in str(e): # Rate limit handler
+                    time.sleep(backoff_factor ** attempt)
+                    continue
+                raise e
+        raise Exception(f"OpenAI failed to process chunk {chunk_index}")

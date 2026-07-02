@@ -13,5 +13,4 @@ class BaseLLMProvider:
 # Expose the providers cleanly so they can be imported directly from 'providers'
 from .gemini import GeminiProvider
 from .openai import OpenAIProvider
-from .claude import ClaudeProvider
-from .ollama import OllamaProvider
+from .anthropic import AnthropicProvider
