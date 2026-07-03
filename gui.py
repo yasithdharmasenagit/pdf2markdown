@@ -113,68 +113,38 @@ class PDF2MarkdownGUI(ctk.CTk):
             selected_engine = self.provider_select.get()
 
             self.log_message("\n--- Running Large Document Pipeline ---")
-            self.log_message("[*] Analyzing document size and structure context...")
+            self.log_message("[*] Initializing decoupled chunk parsing core...")
             
-            extractor = PDFExtractor(pdf_path)
-            
-            import fitz
-            doc = fitz.open(pdf_path)
-            total_pages = len(doc)
-            doc.close()
-            
-            self.log_message(f"Document Target Detected: {total_pages} total pages.")
-
-            PAGES_PER_CHUNK = 5  
-            chunks = []
-            
-            self.log_message(f"[*] Splitting text canvas into segments ({PAGES_PER_CHUNK} pages per block)...")
-            
-            for i in range(0, total_pages, PAGES_PER_CHUNK):
-                start_page = i
-                end_page = min(i + PAGES_PER_CHUNK - 1, total_pages - 1)
-                
-                chunk_text = ""
-                doc_context = fitz.open(pdf_path)
-                for page_num in range(start_page, end_page + 1):
-                    chunk_text += doc_context[page_num].get_text()
-                doc_context.close()
-                
-                chunks.append({
-                    "index": len(chunks),
-                    "start_p": start_page + 1,
-                    "end_p": end_page + 1,
-                    "text": chunk_text
-                })
-
+            # Use our unified, shared chunker module!
+            from core.chunker import DocumentChunker
+            chunker = DocumentChunker(pdf_path)
+            chunks = chunker.generate_chunks(pages_per_chunk=5)
             total_chunks = len(chunks)
-            self.log_message(f"Created {total_chunks} independent chunk packets for processing.")
-
+            
+            self.log_message(f"📦 Successfully parsed file matrix into {total_chunks} chunk packets.")
             compiled_results = [""] * total_chunks
+
+            # --- DYNAMIC MULTI-AI ENGINE ROUTER ---
             provider = None
             
             if "Gemini" in selected_engine:
                 gemini_key = os.getenv("GEMINI_API_KEY")
-                if not gemini_key:
-                    raise ValueError("Missing GEMINI_API_KEY environment variable!")
-                self.log_message("[*] Initializing Parallel Google Gemini Core...")
+                self.log_message("[*] Initializing Uniform Google Gemini Core...")
                 provider = GeminiProvider(api_key=gemini_key)
                 
             elif "ChatGPT" in selected_engine:
                 openai_key = os.getenv("OPENAI_API_KEY")
-                if not openai_key:
-                    raise ValueError("Missing OPENAI_API_KEY environment variable!")
-                self.log_message("[*] Initializing Parallel OpenAI ChatGPT Core...")
+                self.log_message("[*] Initializing Uniform OpenAI ChatGPT Core...")
                 provider = OpenAIProvider(api_key=openai_key)
                 
             elif "Claude" in selected_engine:
                 anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-                if not anthropic_key:
-                    raise ValueError("Missing ANTHROPIC_API_KEY environment variable!")
-                self.log_message("[*] Initializing Parallel Anthropic Claude Core...")
+                self.log_message("[*] Initializing Uniform Anthropic Claude Core...")
                 provider = AnthropicProvider(api_key=anthropic_key)
 
+            # --- EXECUTION PIPELINE LAYER ---
             if provider is not None:
-                self.log_message("[*] Initializing Parallel AI Core Thread Pools...")
+                self.log_message("[*] Launching Concurrent Thread Worker Pools...")
                 MAX_THREADS = 3 
                 
                 with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
@@ -193,12 +163,13 @@ class PDF2MarkdownGUI(ctk.CTk):
                             completed_count += 1
                             percentage = int((completed_count / total_chunks) * 100)
                             self.log_message(
-                                f"Chunks Complete: {completed_count}/{total_chunks} "
+                                f"➡️ Chunks Complete: {completed_count}/{total_chunks} "
                                 f"[{percentage}%] | Processed Pages {chunk_meta['start_p']}-{chunk_meta['end_p']}"
                             )
                         except Exception as e:
-                            self.log_message(f"AI Error on chunk {chunk_meta['index']}: {str(e)}")
-                            self.log_message(f"Running Local Rule Fallback for Pages {chunk_meta['start_p']}-{chunk_meta['end_p']}...")
+                            # Safe localized fallback logic
+                            self.log_message(f"❌ AI Error on chunk {chunk_meta['index']}: {str(e)}")
+                            self.log_message(f"🔄 Executing Local Rule Fallback for Pages {chunk_meta['start_p']}-{chunk_meta['end_p']}...")
                             
                             formatter = MarkdownFormatter(chunk_meta["text"])
                             compiled_results[chunk_meta["index"]] = formatter.format_text()
@@ -206,18 +177,19 @@ class PDF2MarkdownGUI(ctk.CTk):
                 self.converted_markdown_data = "\n\n".join(compiled_results)
             
             else:
-                self.log_message("[*] Executing local unified system parser...")
+                self.log_message("[*] Executing local offline structural rules...")
+                extractor = PDFExtractor(pdf_path)
                 full_raw_text = extractor.extract_text()
                 formatter = MarkdownFormatter(full_raw_text)
                 self.converted_markdown_data = formatter.format_text()
 
             self.viewer_output.delete("1.0", "end")
             self.viewer_output.insert("1.0", self.converted_markdown_data)
-            self.log_message("\nEnterprise Document Conversion Sequence Successful!")
+            self.log_message("\n🎉 Document Conversion Sequence Successful!")
             self.save_btn.configure(state="normal")
 
         except Exception as e:
-            self.log_message(f"Critical Pipeline Failure: {str(e)}")
+            self.log_message(f"❌ Critical Pipeline Failure: {str(e)}")
         
         finally:
             self.convert_btn.configure(state="normal", text="Convert Document")

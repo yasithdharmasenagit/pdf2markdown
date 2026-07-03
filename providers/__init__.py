@@ -11,6 +11,8 @@ class BaseLLMProvider:
         raise NotImplementedError("Each provider model must implement its own transformation logic.")
 
 # Expose the providers cleanly so they can be imported directly from 'providers'
+# providers/__init__.py
+from .base import BaseProvider
 from .gemini import GeminiProvider
 from .openai import OpenAIProvider
 from .anthropic import AnthropicProvider

@@ -1,36 +1,18 @@
-# providers/openai.py
-import time
 from openai import OpenAI
+from .base import BaseProvider
 
-class OpenAIProvider:
+class OpenAIProvider(BaseProvider):
     def __init__(self, api_key: str):
-        if not api_key:
-            raise ValueError("OpenAI API Key missing.")
-        self.client = OpenAI(api_key=api_key)
-        # Using gpt-4o-mini for incredible speed, low costs, and high structural accuracy
-        self.model = "gpt-4o-mini"
+        super().__init__(api_key, model_name='gpt-4o-mini')
+        self.client = OpenAI(api_key=self.api_key)
 
-    def transform_text(self, raw_text: str, chunk_index: int = None) -> str:
-        if not raw_text.strip():
-            return ""
-
-        max_retries = 5
-        backoff_factor = 2
-
-        for attempt in range(max_retries):
-            try:
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    temperature=0.1,
-                    messages=[
-                        {"role": "system", "content": "You are an expert layout engineer. Convert raw text into clean Markdown. Do NOT add preamble. Output ONLY raw markdown."},
-                        {"role": "user", "content": raw_text}
-                    ]
-                )
-                return response.choices[0].message.content
-            except Exception as e:
-                if "429" in str(e): # Rate limit handler
-                    time.sleep(backoff_factor ** attempt)
-                    continue
-                raise e
-        raise Exception(f"OpenAI failed to process chunk {chunk_index}")
+    def _execute_request(self, system_prompt: str, user_prompt: str) -> str:
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            temperature=0.1,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+        )
+        return response.choices[0].message.content
