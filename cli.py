@@ -20,11 +20,10 @@ def main():
     # Core operational command arguments
     parser.add_argument("pdf_path", type=str, help="Absolute or relative path location to target PDF file.")
     parser.add_argument("-o", "--output", type=str, default="output.md", help="Destination path for compiled Markdown text. (Default: output.md)")
-    parser.add_argument("-e", "--engine", type=str, choices=["gemini", "chatgpt", "claude", "local"], default="gemini",
-                        help="AI translation engine selection or local rule fallback loop. (Default: gemini)")
+    parser.add_argument("-e", "--engine", type=str, choices=["gemini", "chatgpt", "claude", "local"], default="gemini", help="AI translation engine selection or local rule fallback loop. (Default: gemini)")
     parser.add_argument("-c", "--chunk-size", type=int, default=5, help="Number of canvas pages to group into an independent packet. (Default: 5)")
-    parser.add_argument("-r", "--range", type=str, default=None, 
-                        help="Target page range subset selection boundary (e.g., '1-10' or '5-12'). Processes full document if omitted.")
+    parser.add_argument("-r", "--range", type=str, default=None, help="Target page range subset selection boundary (e.g., '1-10' or '5-12'). Processes full document if omitted.")
+    parser.add_argument("--ocr", action="store_true", help="Enable Tesseract optical character recognition scan for image pages.")
 
     args = parser.parse_args()
 
@@ -40,7 +39,7 @@ def main():
     try:
         # 1. Parse Document Architecture Boundaries
         print("[*] Analyzing document structural segments...")
-        chunker = DocumentChunker(args.pdf_path)
+        chunker = DocumentChunker(args.pdf_path, use_ocr=args.ocr)
         raw_chunks = chunker.generate_chunks(pages_per_chunk=args.chunk_size)
         
         # 2. Filter via Page Range Flag Constraints if Supplied
@@ -119,14 +118,20 @@ def main():
         else:
             # Full Local Offline Rule Processing Route
             print("[*] Executing local unified layout rules parser across targets...")
-            extractor = PDFExtractor(args.pdf_path)
-            # If a range was selected, compile only the text from the matching chunks
+
+            # Reconstruct the structured layout matrix depending on page selection bounds
             if args.range:
-                full_raw_text = "\n\n".join([c["text"] for c in chunks])
+                # Combine the structured page subsets from our filtered chunks back into a single list
+                structured_payload = []
+                for chunk in chunks:
+                    structured_payload.extend(chunk["structured_data"])
             else:
-                full_raw_text = extractor.extract_text()
-                
-            formatter = MarkdownFormatter(full_raw_text)
+                # Safely initialize the PDFExtractor here using your command-line flags
+                from core.extractor import PDFExtractor
+                extractor = PDFExtractor(args.pdf_path, use_ocr=args.ocr)
+                structured_payload = extractor.extract_text()
+
+            formatter = MarkdownFormatter(structured_payload)
             final_markdown_data = formatter.format_text()
 
         # 5. File Serialization Stream Layer

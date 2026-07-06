@@ -119,7 +119,7 @@ class PDF2MarkdownGUI(ctk.CTk):
             
             # Use our unified, shared chunker module!
             from core.chunker import DocumentChunker
-            chunker = DocumentChunker(pdf_path)
+            chunker = DocumentChunker(pdf_path, use_ocr = False)
             chunks = chunker.generate_chunks(pages_per_chunk=5)
             total_chunks = len(chunks)
             
@@ -180,9 +180,9 @@ class PDF2MarkdownGUI(ctk.CTk):
             
             else:
                 self.log_message("[*] Executing local offline structural rules...")
-                extractor = PDFExtractor(pdf_path)
-                full_raw_text = extractor.extract_text()
-                formatter = MarkdownFormatter(full_raw_text)
+                extractor = PDFExtractor(pdf_path, use_ocr=False)
+                structured_payload = extractor.extract_text()
+                formatter = MarkdownFormatter(structured_payload)
                 self.converted_markdown_data = formatter.format_text()
 
             self.viewer_output.delete("1.0", "end")
