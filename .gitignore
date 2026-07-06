@@ -8,3 +8,4 @@ utils/output/
 *.pdf
 output_raw_text.txt
 output_structured.md
+.env

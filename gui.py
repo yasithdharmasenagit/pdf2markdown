@@ -7,6 +7,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from core.extractor import PDFExtractor
 from core.formatter import MarkdownFormatter
 from providers import GeminiProvider, OpenAIProvider, AnthropicProvider
+from dotenv import load_dotenv
+load_dotenv()
 
 ctk.set_appearance_mode("System")  
 ctk.set_default_color_theme("blue")
@@ -121,7 +123,7 @@ class PDF2MarkdownGUI(ctk.CTk):
             chunks = chunker.generate_chunks(pages_per_chunk=5)
             total_chunks = len(chunks)
             
-            self.log_message(f"📦 Successfully parsed file matrix into {total_chunks} chunk packets.")
+            self.log_message(f"Successfully parsed file matrix into {total_chunks} chunk packets.")
             compiled_results = [""] * total_chunks
 
             # --- DYNAMIC MULTI-AI ENGINE ROUTER ---
@@ -163,13 +165,13 @@ class PDF2MarkdownGUI(ctk.CTk):
                             completed_count += 1
                             percentage = int((completed_count / total_chunks) * 100)
                             self.log_message(
-                                f"➡️ Chunks Complete: {completed_count}/{total_chunks} "
+                                f"Chunks Complete: {completed_count}/{total_chunks} "
                                 f"[{percentage}%] | Processed Pages {chunk_meta['start_p']}-{chunk_meta['end_p']}"
                             )
                         except Exception as e:
                             # Safe localized fallback logic
-                            self.log_message(f"❌ AI Error on chunk {chunk_meta['index']}: {str(e)}")
-                            self.log_message(f"🔄 Executing Local Rule Fallback for Pages {chunk_meta['start_p']}-{chunk_meta['end_p']}...")
+                            self.log_message(f"AI Error on chunk {chunk_meta['index']}: {str(e)}")
+                            self.log_message(f"Executing Local Rule Fallback for Pages {chunk_meta['start_p']}-{chunk_meta['end_p']}...")
                             
                             formatter = MarkdownFormatter(chunk_meta["text"])
                             compiled_results[chunk_meta["index"]] = formatter.format_text()
@@ -185,11 +187,11 @@ class PDF2MarkdownGUI(ctk.CTk):
 
             self.viewer_output.delete("1.0", "end")
             self.viewer_output.insert("1.0", self.converted_markdown_data)
-            self.log_message("\n🎉 Document Conversion Sequence Successful!")
+            self.log_message("\nDocument Conversion Sequence Successful!")
             self.save_btn.configure(state="normal")
 
         except Exception as e:
-            self.log_message(f"❌ Critical Pipeline Failure: {str(e)}")
+            self.log_message(f"Critical Pipeline Failure: {str(e)}")
         
         finally:
             self.convert_btn.configure(state="normal", text="Convert Document")
