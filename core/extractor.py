@@ -1,3 +1,4 @@
+# core/extractor.py
 import os
 import re
 from collections import Counter
@@ -45,7 +46,7 @@ class PDFExtractor:
         
         return headers_to_strip.union(footers_to_strip)
 
-    def extract_text(self) -> str:
+    def extract_text(self) -> list:
         """Parses the layout structure of the document, strips headers/footers, and uses OCR if needed."""
         try:
             doc = fitz.open(self.pdf_path)
@@ -88,7 +89,6 @@ class PDFExtractor:
                         continue
 
                 # --- MULTI-COLUMN DETECTOR & STRUCTURAL SORTING ---
-                # Cluster blocks into column channels based on horizontal x0 boundaries
                 columns = []
                 # Sort left-to-right first
                 sorted_by_x = sorted(text_blocks, key=lambda b: b["bbox"][0])
@@ -106,13 +106,33 @@ class PDFExtractor:
                     if not placed:
                         columns.append({"x0_avg": x0, "blocks": [block]})
 
-                # Sort column channels from left to right, then sort blocks top-to-bottom within each column
+                # Sort column channels from left to right
                 sorted_columns = sorted(columns, key=lambda c: c["x0_avg"])
+                
+                # --- PHASE 4: INITIALIZE LIVE ASSET EXTRACTION FOR THIS PAGE ---
+                from core.layout_assets import LayoutAssetManager
+                asset_engine = LayoutAssetManager(self.pdf_path)
+                page_tables = asset_engine.extract_page_tables(page)
+                page_images = asset_engine.extract_page_images(doc, page, page_index)
                 
                 for column in sorted_columns:
                     sorted_blocks = sorted(column["blocks"], key=lambda b: b["bbox"][1])
                     
                     for block in sorted_blocks:
+                        block_bbox = block["bbox"]
+                        
+                        # Interleave Table matches that land vertically above this text block
+                        for table in list(page_tables):
+                            if table["bbox"][1] < block_bbox[1]:
+                                page_text_output.append([{"text": table["markdown"], "size": 10.0, "bold": False}])
+                                page_tables.remove(table)
+                                
+                        # Interleave Image assets that land vertically above this text block
+                        for img in list(page_images):
+                            if img["bbox"][1] < block_bbox[1]:
+                                page_text_output.append([{"text": img["markdown"], "size": 10.0, "bold": False}])
+                                page_images.remove(img)
+
                         block_lines = []
                         for line in block["lines"]:
                             line_text = "".join([span["text"] for span in line["spans"]]).strip()
@@ -122,11 +142,10 @@ class PDFExtractor:
                                 continue
                                 
                             if line_text:
-                                # Calculate text features using the first span's styling metrics
                                 first_span = line["spans"][0]
                                 size = first_span.get("size", 10.0)
                                 flags = first_span.get("flags", 0)
-                                is_bold = bool(flags & 2) # Bit flag check for bold styles
+                                is_bold = bool(flags & 2)
                                 
                                 block_lines.append({
                                     "text": line_text,
@@ -136,6 +155,12 @@ class PDFExtractor:
                         
                         if block_lines:
                             page_text_output.append(block_lines)
+
+                # Append any remaining tables or images that belong at the bottom of the page
+                for table in page_tables:
+                    page_text_output.append([{"text": table["markdown"], "size": 10.0, "bold": False}])
+                for img in page_images:
+                    page_text_output.append([{"text": img["markdown"], "size": 10.0, "bold": False}])
 
                 compiled_document_text.append(page_text_output)
 
