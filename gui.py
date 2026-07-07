@@ -36,7 +36,7 @@ class PDF2MarkdownGUI(ctk.CTk):
         self.left_panel = ctk.CTkFrame(self, width=320)
         self.left_panel.grid(row=0, column=0, padx=15, pady=15, sticky="nsew")
         
-        self.title_label = ctk.CTkLabel(self.left_panel, text="⚡ PDF2Markdown Heavy-Duty", font=ctk.CTkFont(size=18, weight="bold"))
+        self.title_label = ctk.CTkLabel(self.left_panel, text="PDF2Markdown Heavy-Duty", font=ctk.CTkFont(size=18, weight="bold"))
         self.title_label.pack(padx=15, pady=20)
 
         self.file_entry = ctk.CTkEntry(self.left_panel, placeholder_text="Pick a PDF file...", width=260)
@@ -48,22 +48,13 @@ class PDF2MarkdownGUI(ctk.CTk):
         self.provider_label = ctk.CTkLabel(self.left_panel, text="Select AI Engine:", font=ctk.CTkFont(size=12, weight="bold"))
         self.provider_label.pack(padx=15, pady=(15, 0), anchor="w")
         
-        self.provider_select = ctk.CTkOptionMenu(
-            self.left_panel, values=["Gemini (AI Parallel Chunks Engine)", "ChatGPT (OpenAI Core)", "Claude (Anthropic Engine)", "Local Rules (Offline Local Fallback)"], width=260
-        )
+        self.provider_select = ctk.CTkOptionMenu(self.left_panel, values=["Gemini (AI Parallel Chunks Engine)", "ChatGPT (OpenAI Core)", "Claude (Anthropic Engine)", "Local Rules (Offline Local Fallback)"], width=260)
         self.provider_select.pack(padx=15, pady=5)
 
-        self.convert_btn = ctk.CTkButton(
-            self.left_panel, text="Convert Document", command=self.start_conversion_thread,
-            fg_color="#1f538d", hover_color="#14375e", font=ctk.CTkFont(weight="bold")
-        )
+        self.convert_btn = ctk.CTkButton(self.left_panel, text="Convert Document", command=self.start_conversion_thread, fg_color="#1f538d", hover_color="#14375e", font=ctk.CTkFont(weight="bold"))
         self.convert_btn.pack(padx=15, pady=20)
 
-        self.save_btn = ctk.CTkButton(
-            self.left_panel, text="Save Document As...", command=self.save_file_destination,
-            fg_color="#1b6335", hover_color="#16a34a", text_color="white",
-            font=ctk.CTkFont(weight="bold"), state="disabled", width=260
-        )
+        self.save_btn = ctk.CTkButton(self.left_panel, text="Save Document As...", command=self.save_file_destination, fg_color="#1b6335", hover_color="#16a34a", text_color="white", font=ctk.CTkFont(weight="bold"), state="disabled", width=260)
         self.save_btn.pack(padx=15, pady=5)
 
         self.log_label = ctk.CTkLabel(self.left_panel, text="System Log Trace:", font=ctk.CTkFont(size=11))
@@ -110,92 +101,132 @@ class PDF2MarkdownGUI(ctk.CTk):
         threading.Thread(target=self.run_pipeline, daemon=True).start()
 
     def run_pipeline(self):
-        try:
-            pdf_path = self.selected_pdf_path
-            selected_engine = self.provider_select.get()
+        """Advanced execution pipeline layer parsing token estimates, checkpoints, and layouts."""
+        pdf_path = self.file_entry.get().strip()
+        raw_provider_value = self.provider_select.get()
+        engine_selection = raw_provider_value.split()[0].lower()
+        output_markdown_path = "gui_output.md" 
 
-            self.log_message("\n--- Running Large Document Pipeline ---")
-            self.log_message("[*] Initializing decoupled chunk parsing core...")
-            
-            # Use our unified, shared chunker module!
+        if not pdf_path or not os.path.exists(pdf_path):
+            self.log_message("Critical Error: Target file path selection is missing or invalid.")
+            self._reset_ui_buttons()
+            return
+
+        try:
+            self.log_message("========================================================")
+            self.log_message("PDF2Markdown Professional UI Pipeline Active")
+            self.log_message("========================================================")
+
+            # 1. Structural Chunk Generation Pass
             from core.chunker import DocumentChunker
-            chunker = DocumentChunker(pdf_path, use_ocr = False)
+            chunker = DocumentChunker(pdf_path, use_ocr=False)
             chunks = chunker.generate_chunks(pages_per_chunk=5)
             total_chunks = len(chunks)
-            
-            self.log_message(f"Successfully parsed file matrix into {total_chunks} chunk packets.")
+
+            # 2. Phase 4 Cost & Token Calculation Estimation
+            from core.analytics import RuntimeExecutionSuite
+            metrics = RuntimeExecutionSuite.estimate_token_costs(chunks, engine_selection)
+            self.log_message(f"Volume Metrics: ~{metrics['tokens']:,} Tokens | Estimated Run Cost: ${metrics['cost']:.4f}")
+
+            # 3. Phase 4 Session Cache Recovery Checkpoints
+            saved_progress = RuntimeExecutionSuite.load_progress(output_markdown_path)
+            if saved_progress:
+                self.log_message(f"Checkpoint Cache Found! Automatically recovering {len(saved_progress)} segments.")
+
             compiled_results = [""] * total_chunks
-
-            # --- DYNAMIC MULTI-AI ENGINE ROUTER ---
-            provider = None
             
-            if "Gemini" in selected_engine:
-                gemini_key = os.getenv("GEMINI_API_KEY")
-                self.log_message("[*] Initializing Uniform Google Gemini Core...")
-                provider = GeminiProvider(api_key=gemini_key)
-                
-            elif "ChatGPT" in selected_engine:
-                openai_key = os.getenv("OPENAI_API_KEY")
-                self.log_message("[*] Initializing Uniform OpenAI ChatGPT Core...")
-                provider = OpenAIProvider(api_key=openai_key)
-                
-            elif "Claude" in selected_engine:
-                anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-                self.log_message("[*] Initializing Uniform Anthropic Claude Core...")
-                provider = AnthropicProvider(api_key=anthropic_key)
+            # Rehydrate completed chunk positions from local save state
+            for idx in range(total_chunks):
+                if str(idx) in saved_progress:
+                    compiled_results[idx] = saved_progress[str(idx)]
 
-            # --- EXECUTION PIPELINE LAYER ---
+            # 4. Resolve Dynamic Provider Instances
+            provider = self._get_active_provider(engine_selection)
+
+            # 5. Multi-Threaded Process Framework Mapping Loop
             if provider is not None:
-                self.log_message("[*] Launching Concurrent Thread Worker Pools...")
-                MAX_THREADS = 3 
+                from concurrent.futures import ThreadPoolExecutor, as_completed
                 
-                with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-                    future_to_chunk = {
-                        executor.submit(provider.transform_text, chunk["text"], chunk["index"]): chunk 
-                        for chunk in chunks
-                    }
-                    
-                    completed_count = 0
-                    for future in as_completed(future_to_chunk):
-                        chunk_meta = future_to_chunk[future]
-                        try:
-                            markdown_chunk_data = future.result()
-                            compiled_results[chunk_meta["index"]] = markdown_chunk_data
-                            
-                            completed_count += 1
-                            percentage = int((completed_count / total_chunks) * 100)
-                            self.log_message(
-                                f"Chunks Complete: {completed_count}/{total_chunks} "
-                                f"[{percentage}%] | Processed Pages {chunk_meta['start_p']}-{chunk_meta['end_p']}"
-                            )
-                        except Exception as e:
-                            # Safe localized fallback logic
-                            self.log_message(f"AI Error on chunk {chunk_meta['index']}: {str(e)}")
-                            self.log_message(f"Executing Local Rule Fallback for Pages {chunk_meta['start_p']}-{chunk_meta['end_p']}...")
-                            
-                            formatter = MarkdownFormatter(chunk_meta["text"])
-                            compiled_results[chunk_meta["index"]] = formatter.format_text()
+                # Identify remaining items to minimize duplicate API charges
+                unprocessed_indices = [i for i in range(total_chunks) if str(chunks[i]["index"]) not in saved_progress]
 
-                self.converted_markdown_data = "\n\n".join(compiled_results)
-            
+                if unprocessed_indices:
+                    self.log_message(f"[*] Dispatching concurrent background threads for {len(unprocessed_indices)} chunks...")
+                    with ThreadPoolExecutor(max_workers=3) as executor:
+                        future_to_index = {
+                            executor.submit(provider.transform_text, chunks[i]["text"], chunks[i]["index"]): i 
+                            for i in unprocessed_indices
+                        }
+                        
+                        for future in as_completed(future_to_index):
+                            pos = future_to_index[future]
+                            chunk_meta = chunks[pos]
+                            try:
+                                markdown_chunk = future.result()
+                                compiled_results[pos] = markdown_chunk
+                                
+                                # Instantly checkpoint state block on disk
+                                RuntimeExecutionSuite.save_progress(output_markdown_path, chunk_meta["index"], markdown_chunk)
+                                self.log_message(f"Packets Resolved: Chunk {chunk_meta['index']} | Pages {chunk_meta['start_p']}-{chunk_meta['end_p']}")
+                            except Exception as e:
+                                self.log_message(f"AI Error on pages {chunk_meta['start_p']}: Running local layout fallback rule...")
+                                from core.formatter import MarkdownFormatter
+                                formatter = MarkdownFormatter(chunk_meta["structured_data"])
+                                fallback_md = formatter.format_text()
+                                compiled_results[pos] = fallback_md
+                                RuntimeExecutionSuite.save_progress(output_markdown_path, chunk_meta["index"], fallback_md)
+
+                final_body_text = "\n\n".join(compiled_results)
             else:
-                self.log_message("[*] Executing local offline structural rules...")
-                extractor = PDFExtractor(pdf_path, use_ocr=False)
-                structured_payload = extractor.extract_text()
-                formatter = MarkdownFormatter(structured_payload)
-                self.converted_markdown_data = formatter.format_text()
+                # Local Rules Fallback Route
+                self.log_message("[*] Running local layout rules parsing engine...")
+                from core.formatter import MarkdownFormatter
+                formatter = MarkdownFormatter(chunker.generate_chunks(10000)[0]["structured_data"])
+                final_body_text = formatter.format_text()
 
-            self.viewer_output.delete("1.0", "end")
+            # 6. Extract structural YAML Frontmatter & Bookmarks Outlines
+            from core.metadata import DocumentMetadataParser
+            meta_engine = DocumentMetadataParser(pdf_path)
+            frontmatter = meta_engine.generate_frontmatter_and_toc()
+
+            # 7. Final Output Aggregation File Stream Assembly
+            self.converted_markdown_data = frontmatter + "\n\n" + final_body_text
+            
+            with open(output_markdown_path, "w", encoding="utf-8") as f:
+                f.write(self.converted_markdown_data)
+
+            # Clear temporary json checkpoints on a successful run completion
+            RuntimeExecutionSuite.clear_progress(output_markdown_path)
+            
+            # 🎯 FIXED: Direct text insertion into our read-only text viewer widget canvas
             self.viewer_output.insert("1.0", self.converted_markdown_data)
-            self.log_message("\nDocument Conversion Sequence Successful!")
-            self.save_btn.configure(state="normal")
+            self.log_message("\nGUI Document Conversion Sequence Successful!\n")
 
         except Exception as e:
-            self.log_message(f"Critical Pipeline Failure: {str(e)}")
+            self.log_message(f"\nCritical Pipeline Error: {str(e)}\n")
         
         finally:
-            self.convert_btn.configure(state="normal", text="Convert Document")
+            # Re-activate operational trigger fields for the operator interface
+            self._reset_ui_buttons()
 
+    def _reset_ui_buttons(self):
+        """Restores CTA button interaction state capabilities back onto the user interface canvas."""
+        self.convert_btn.configure(state="normal", text="Convert Document")
+        if self.converted_markdown_data:
+            self.save_btn.configure(state="normal")
+
+    def _get_active_provider(self, engine_name: str):
+        """Matches selected interface keys with matching unified backend provider structures."""
+        from providers import GeminiProvider, OpenAIProvider, AnthropicProvider
+        
+        if engine_name == "gemini":
+            return GeminiProvider(api_key=os.getenv("GEMINI_API_KEY"))
+        elif engine_name == "chatgpt":
+            return OpenAIProvider(api_key=os.getenv("OPENAI_API_KEY"))
+        elif engine_name == "claude":
+            return AnthropicProvider(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        return None 
+    
     def save_file_destination(self):
         if not self.converted_markdown_data:
             return
